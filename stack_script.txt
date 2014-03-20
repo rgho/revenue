@@ -1,0 +1,538 @@
+unction stripSpaces pString
+   replace " " with "" in pString
+   return pString
+end stripSpaces
+
+function theDetectedIssuer pCardNum
+   // FURTHER IMPROVEMENT. SEEMS TO DETECT ALL CARDS WELL EXCEPT JCB
+   -- CLEAN AND VALIDATE
+   put stripSpaces(pCardNum) into pCardNum
+   if not(pCardNum is a number) then return "Error: Cardnum is not a number."
+   
+   // REGULAR EXPRESSIONS (from StackExchange)
+   put "^4[0-9]{12}(?:[0-9]{3})?$" into tIssuerRegexA["VISA"]
+   put "^5[1-5][0-9]{14}$" into tIssuerRegexA["MasterCard"]
+   put "^3[47][0-9]{13}$" into tIssuerRegexA["American Express"]
+   put "^3(?:0[0-5]|[68][0-9])[0-9]{11}$" into tIssuerRegexA["Diners Club"]
+   put "^6(?:011|5[0-9]{2})[0-9]{12}$" into tIssuerRegexA["DISCOVER"]
+   put "^(?:2131|1800|35\d{3})\d{11}$" into tIssuerRegexA["JCB"]
+   //put "^(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|6(?:011|5[0-9][0-9])[0-9]{12}|3[47][0-9]{13}|3(?:0[0-5]|[68][0-9])[0-9]{11}|(?:2131|1800|35\d{3})\d{11})$" into tAllCCs
+   
+   
+   // LOOP
+   repeat for each key thisIssuer in tIssuerRegexA
+      if matchText(pCardNum,tIssuerRegexA[thisIssuer]) then return thisIssuer 
+   end repeat
+   return "Error: Could Not determine card type."
+      
+   ---
+   /*Visa: ^4[0-9]{12}(?:[0-9]{3})?$ Visa card numbers start with a 4. New cards have 16 digits. Old cards have 13.
+   
+   MasterCard: ^5[1-5][0-9]{14}$ MasterCard numbers start with the numbers 51 through 55. All have 16 digits.
+   
+   American Express: ^3[47][0-9]{13}$ American Express card numbers start with 34 or 37 and have 15 digits.
+   
+   Diners Club: ^3(?:0[0-5]|[68][0-9])[0-9]{11}$ Diners Club card numbers begin with 300 through 305, 36 or 38. All have 14 digits. There are Diners Club cards that begin with 5 and have 16 digits. These are a joint venture between Diners Club and MasterCard, and should be processed like a MasterCard.
+   
+   Discover: ^6(?:011|5[0-9]{2})[0-9]{12}$ Discover card numbers begin with 6011 or 65. All have 16 digits.
+   
+   JCB: ^(?:2131|1800|35\d{3})\d{11}$ JCB cards beginning with 2131 or 1800 have 15 digits. JCB cards beginning with 35 have 16 digits.
+   
+   The following expression can be used to validate against all card types, regardless of brand:
+   
+   ^(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|6(?:011|5[0-9][0-9])[0-9]{12}|3[47][0-9]{13}|3(?:0[0-5]|[68][0-9])[0-9]{11}|(?:2131|1800|35\d{3})\d{11})$
+   
+   */
+   
+   
+   
+end theDetectedIssuer
+
+function isOdd pNum
+   if the last char of pNum is among the items of "1,3,5,7,9" then return "TRUE"
+   return "FALSE"
+end isOdd
+
+function theLuhnCheck pNumber
+   put stripSpaces(pNumber) into tNum
+   if not(tNum is a number) then return "ERROR: The Luhn Check only applies to numbers."
+   
+   // GET THE CHECK DIGIT, AND REMOVE IT FROM THE MAIN STRING
+   put the last char of tNum into tCheckDigit
+   put char 1 to -1 of tNum into tNum
+   
+   // DOUBLE EACH NUMBER IN tNum and make a list.
+   put empty into tList
+   repeat for each char thisNum in tNum
+      put tNum*2 & lf after tList
+   end repeat
+   filter tList without empty
+   
+   // NOW WE GO THROUGH THE LIST AND SUM THE DIGITS OF EACH ITEM
+   // SINCE THE MAX VALUE AN ITEM CAN HAVE IS 18 (two digits) we can hard code the conditionals.
+   repeat for each line thisNum in tList
+      if the number of chars in thisNum is 2 then \
+            put (char 1 of thisNum + char 2 of thisNum) & lf into tList2 else \
+            put thisNum & lf after tList2
+   end repeat
+   filter tList2 without empty
+   
+   // NOW WE SUM THE VALS IN LIST 2
+   put 0 into tSum
+   repeat for each line thisNum in tList2 
+      put tSum + thisNum into tSum
+   end repeat
+   put tSum*9 into tSum // LAST STEP
+   put the last char of tSum into tCheck2
+   if tCheck2 is tCheckDigit then return "TRUE" else return "FALSE"
+end theLuhnCheck
+
+function theFasterLuhnCheck pNum
+   // this is an intellectual excerise for me, the code is less descriptive, 
+   //but the operations are fewer and less wasteful of memory. Test against the original
+   // for speed and accuracy.
+   
+   put stripSpaces(pNumber) into tNum
+   if not(tNum is a number) then return "ERROR: The Luhn Check only applies to numbers."
+   
+   // GET THE CHECK DIGIT, AND REMOVE IT FROM THE MAIN STRING
+   put the last char of tNum into tCheckDigit
+   put char 1 to -1 of tNum into tNum
+   
+   // DOUBLE EACH NUMBER IN tNum and make a list.
+   put 0 into tSum
+   
+   repeat with x= 1 to the number of chars in tNum
+      // DOUBLE EVERY ALTERNATIVE CHAR AND ADD TO SUM
+      if isOdd(x) then
+         put char x of tNum into thisNum
+         put thisNum into tIncrement
+      else
+         // CALC THE x2 and then the sum of resulting digits
+         if thisNum is 0 then put 0 into tIncrement // 0*2 = 0
+         if thisNum is 1 then put 2 into tIncrement
+         if thisNum is 2 then put 4 into tIncrement
+         if thisNum is 3 then put 2 into tIncrement
+         if thisNum is 4 then put 8 into tIncrement // 4*2=8
+         if thisNum is 5 then put 1 into tIncrement // 5*2 = 10 , 1+0 = 1
+         if thisNum is 6 then put 3 into tIncrement
+         if thisNum is 7 then put 5 into tIncrement
+         if thisNum is 8 then put 7 into tIncrement // 8*2 = 16, 1+6 = 7
+         if thisNum is 9 then put 9 into tIncrement // 9*2 = 18, 1+8 = 9
+      end if
+      // NOW ADD
+      put tsum+tIncrement into tSum
+      
+   end repeat
+      
+   //LAST STEP
+   put tSum*9 into tSum // LAST STEP
+   
+   
+   // CHECK THE LAST DIGIT of tSum vs Orig.
+   put the last char of tSum into tCheck2
+   if tCheck2 is tCheckDigit then return "TRUE" else return "FALSE"
+end theFasterLuhnCheck
+
+function parseTrack2 pTrack2Data
+   // RELEVANT STANDARDS ARE ISO/IEC 7813 FOR TRACK 1 AND 2 DATA
+   //http://www.tech-faq.com/layout-of-data-on-magnetic-stripe-cards.html
+   // AMAZING RESOURCE !! http://www.gae.ucm.es/~padilla/extrawork/tracks.html
+   // http://en.wikipedia.org/wiki/ISO/IEC_7813
+   // http://en.wikipedia.org/wiki/Magnetic_stripe_card
+   put pTrack2Data into tData
+   
+   -- VALIDATION
+   put "TRUE" into tValid
+   if the number of lines in tData > 1 then put line 1 of tData into tData
+   if not(tData contains ";") then put "FALSE" into tValid
+   if not(tData contains "=") then put "FALSE" into tValid
+   if not(tData contains "?") then put "FALSE" into tValid
+   
+   -- DETERMINE POSITION OF CRITICAL CHARS
+   repeat with x = 1 to the number of chars in tData
+      if char x of tData is ";" then put x into tStartSentinalPosition
+      if char x of tData is "=" then put x into tEqualCharPositon
+      if char x of tData is "?" then put x into tEndSentinalPositon
+   end repeat
+   
+   -- ANOTHER CHECK FOR VALIDITY
+   if not((tEqualCharPositon > tStartSentinalPosition) AND (tEqualCharPositon < tEndSentinalPositon)) \
+         then put "FALSE" into tValid
+   
+   
+   --PARSE
+   -- FIRST GET PAN
+   put char tStartSentinalPosition+1 to tEqualCharPositon-1 of tData into tPAN
+   
+   -- FROM HERE MANY THINGS ARE CONDITIONAL SO WE USE A CURRENT CHAR TO MARK THE POSITION
+   put tEqualCharPositon into tCurrentChar
+   
+   --DETECT MASTERCARD AND COUNTRY CODE
+   put "NONE" into tCountrycode
+   if (char 1 to 2 of tPAN) is "59" then
+      put char tCurrentChar+1 to tCurrentChar+3 of tData into tCountrycode
+      put tCurrentChar+3 into tCurrentChar
+   end if
+   
+   --DETECT IF EXPIRATION DATA EXISTS
+   --An expiration is required here for VISA and MASTRERCARD, but other issuers may not
+   -- have one. The ISO specifies if no expiry exists, a field seperator must be used.
+   put ":,;,<,=,>,?" into tFieldSeperators
+   set the itemdel to comma
+   put "NONE" into tExpiration
+   if char tCurrentChar+1 of tData is among the items of tFieldSeperators then
+      put tCurrentChar+1 into tCurrentChar
+   else 
+      put char tCurrentChar+1 to tCurrentChar+4 of tData into tExpiration
+      put tCurrentChar+4 into tCurrentChar
+   end if
+   
+   -- SERVICE CODE
+   put "NONE" into tServiceCode
+   if char tCurrentChar+1 of tData is among the items of tFieldSeperators then
+      put tCurrentChar+1 into tCurrentChar
+   else 
+      put char tCurrentChar+1 to tCurrentChar+3 of tData into tServiceCode
+      put tCurrentChar+3 into tCurrentChar
+   end if
+   
+   put char tCurrentChar+1 to tEndSentinalPositon-1 of tData into tDiscretionaryData
+   
+   --HANDLE SERVICE CODE BETTER
+   put char 1 of tServiceCode into tInterchangeRules
+   put char 2 of tServiceCode into tAuthorisationProcessing
+   put char 3 of tServiceCode into tRangeOfServices
+   
+   --HANDLE EXPIRATION
+   if tExpiration is "NONE" then
+      put "NONE" into tMonth
+      put "NONE" into tYear
+   else
+      set the itemdel to comma
+      put char 1 to 2 of tExpiration into tYear
+      put char 3 to 4 of tExpiration into tMonth
+      put "JAN,FEB,MAR,APR,MAY,JUN,JUL,AUG,SEP,OCT,NOV,DEC" into tMonthList
+      put (item tMonth of tMonthList) into tEnglishMonth
+   end if
+   
+   --HANDLE COUNTRY CODE
+   put countryNameFromCode(tCountryCode) into tCountry
+   
+   // MEANINGS
+   put "0: Reserved for future use by ISO." & lf & \
+         "1: Available for international interchange." & lf & \
+         "2: Available for international interchange and with integrated circuit, which should be used for the financial transaction when feasible." & lf & \
+         "3: Reserved for future use by ISO." & lf & \
+         "4: Reserved for future use by ISO." & lf & \
+         "5: Available for national interchange only, except under bilateral agreement." & lf & \
+         "6: Available for national interchange only, except under bilateral agreement, and with integrated circuit, which should be used for the financial transaction when feasible." & lf & \
+         "7: Not available for general interchange, except under bilateral agreement." & lf & \
+         "8: Reserved for future use by ISO." & lf & \
+         "9: Test." & lf & \
+         "" into tInterChangeMeanings
+   
+   put "0: Transactions are authorized following the normal rules." & lf & \
+         "1: Reserved for future use by ISO." & lf & \
+         "2: Transactions are authorized by issuer and should be online." & lf & \
+         "3: Reserved for future use by ISO." & lf & \
+         "4: Transactions are authorized by issuer and should be online, except under bilateral agreement." & lf & \
+         "5: Reserved for future use by ISO." & lf & \
+         "6: Reserved for future use by ISO." & lf & \
+         "7: Reserved for future use by ISO." & lf & \
+         "8: Reserved for future use by ISO." & lf & \
+         "9: Reserved for future use by ISO." & lf & \
+         "" into tAuthMeanings
+   
+   put "0: No restrictions and PIN required." & lf & \
+         "1: No restrictions." & lf & \
+         "2: Goods and services only (no cash)." & lf & \
+         "3: ATM only and PIN required." & lf & \
+         "4: Cash only." & lf & \
+         "5: Goods and services only (no cash) and PIN required." & lf & \
+         "6: No restrictions and require PIN when feasible." & lf & \
+         "7: Goods and services only (no cash) and require PIN when feasible." & lf & \
+         "8: Reserved for future use by ISO." & lf & \
+         "9: Reserved for future use by ISO." & lf & \
+         "" into tServiceMeanings
+   
+   -- Assign Meanings
+   put line tInterchangeRules + 1 of tInterChangeMeanings into tIMessage
+   put line tAuthorisationProcessing + 1 of tAuthMeanings into tAMessage
+   put line tRangeOfServices + 1 of tServiceMeanings into tROSMessage
+   
+   -- ANSWER DATA
+   answer "CC# /PAN#: " &  tPAN & lf & "Expiry: " & tExpiration & lf & \
+         "ServiceCode: " & tServiceCode & lf & "Discretionary Data: " & tDiscretionaryData & lf & \
+         "Year: " & tYear & lf & "Month: " & tMonth & lf & "English Month: " & tEnglishMonth & \
+         lf & "InterChange Rule: " & tIMessage & lf & "Authorization Rule: " & tAMessage \
+         & lf & "Range Of Services: " & tROSMessage & lf & "Country Code: " & tCountrycode & lf & \
+         "English Country: " & tCountry
+   
+   return "Hey"
+   
+end parseTrack2
+
+
+
+function parseTrack1 pTrack1Data
+   put pTrack1Data into tData
+   
+   -- VALIDATION
+   put "TRUE" into tValid
+   if the number of lines in tData > 1 then put line 1 of tData into tData
+   if not(char 1 of tData is "%") then put FALSE into tValid
+   
+   
+   -- ANOTHER CHECK FOR VALIDITY
+   --if not((tEqualCharPositon > tStartSentinalPosition) AND (tEqualCharPositon < tEndSentinalPositon)) \
+         --then put "FALSE" into tValid
+   
+   --PARSE
+   put char 2 of tData into tFormatCode
+   put nextPositionOfChar("^",tData,2) into tSeperatorPos
+   put dataTillNextChar("^",tData,2) into tPAN
+   
+   -- FROM HERE MANY THINGS ARE CONDITIONAL SO WE USE A CURRENT CHAR TO MARK THE POSITION
+   put tSeperatorPos into tCurrentChar
+   
+   --DETECT MASTERCARD AND COUNTRY CODE
+   put "NONE" into tCountrycode
+   if (char 1 to 2 of tPAN) is "59" then
+      put char tCurrentChar+1 to tCurrentChar+3 of tData into tCountrycode
+      put tCurrentChar+3 into tCurrentChar
+   end if
+   
+   put nextPositionOfChar("^",tData,tCurrentChar) into tSeperatorPos
+   put dataTillNextChar("^",tData,tCurrentChar) into tNameRawData
+   
+   -- PARSE RAW NAME DATA
+   if tNameRawData is " /" then 
+      put "Unknown" into tFirstname 
+      put "Unknown" into tLastName
+   else
+      set the itemdel to "/"
+      put item 1 of tNameRawData into tLastName
+      put item 2 of tNameRawData into tFirstName
+      if tFirstName contains "." then
+         set the itemdel to "."
+         put item 2 of tFirstName into tTitle
+         put item 1 of tFirstName into tFirstName
+      end if
+      set the itemdel to comma 
+   end if
+   put tSeperatorPos into tCurrentChar
+   
+   --DETECT IF EXPIRATION DATA EXISTS
+   put "NONE" into tExpiration
+   if char tCurrentChar+1 of tData is "^" then
+      put tCurrentChar+1 into tCurrentChar
+   else 
+      put char tCurrentChar+1 to tCurrentChar+4 of tData into tExpiration
+      put tCurrentChar+4 into tCurrentChar
+   end if
+   
+   -- SERVICE CODE
+   put "NONE" into tServiceCode
+   if char tCurrentChar+1 of tData is "^" then
+      put tCurrentChar+1 into tCurrentChar
+   else  
+      put char tCurrentChar+1 to tCurrentChar+3 of tData into tServiceCode
+      put tCurrentChar+3 into tCurrentChar
+   end if
+   
+   -- REST OF THE DATA GOES INTO DISCRETIONARY.
+   put dataTillNextChar("?",tData,tCurrentChar) into tDiscretionaryData
+   
+   --HANDLE SERVICE CODE BETTER
+   if not tServiceCode is "NONE" then
+      put char 1 of tServiceCode into tInterchangeRules
+      put char 2 of tServiceCode into tAuthorisationProcessing
+      put char 3 of tServiceCode into tRangeOfServices
+   end if
+   
+   --HANDLE EXPIRATION
+   put char 1 to 2 of tExpiration into tYear
+   put char 3 to 4 of tExpiration into tMonth
+   
+   --
+   if tExpiration is "NONE" then
+      put "NONE" into tMonth
+      put "NONE" into tYear
+   else
+      set the itemdel to comma
+      put "JAN,FEB,MAR,APR,MAY,JUN,JUL,AUG,SEP,OCT,NOV,DEC" into tMonthList
+      put (item tMonth of tMonthList) into tEnglishMonth
+   end if
+   
+   --HANDLE COUNTRY CODE
+   put countryNameFromCode(tCountryCode) into tCountry
+   
+   // MEANINGS
+   put "0: Reserved for future use by ISO." & lf & \
+         "1: Available for international interchange." & lf & \
+         "2: Available for international interchange and with integrated circuit, which should be used for the financial transaction when feasible." & lf & \
+         "3: Reserved for future use by ISO." & lf & \
+         "4: Reserved for future use by ISO." & lf & \
+         "5: Available for national interchange only, except under bilateral agreement." & lf & \
+         "6: Available for national interchange only, except under bilateral agreement, and with integrated circuit, which should be used for the financial transaction when feasible." & lf & \
+         "7: Not available for general interchange, except under bilateral agreement." & lf & \
+         "8: Reserved for future use by ISO." & lf & \
+         "9: Test." & lf & \
+         "" into tInterChangeMeanings
+   
+   put "0: Transactions are authorized following the normal rules." & lf & \
+         "1: Reserved for future use by ISO." & lf & \
+         "2: Transactions are authorized by issuer and should be online." & lf & \
+         "3: Reserved for future use by ISO." & lf & \
+         "4: Transactions are authorized by issuer and should be online, except under bilateral agreement." & lf & \
+         "5: Reserved for future use by ISO." & lf & \
+         "6: Reserved for future use by ISO." & lf & \
+         "7: Reserved for future use by ISO." & lf & \
+         "8: Reserved for future use by ISO." & lf & \
+         "9: Reserved for future use by ISO." & lf & \
+         "" into tAuthMeanings
+   
+   put "0: No restrictions and PIN required." & lf & \
+         "1: No restrictions." & lf & \
+         "2: Goods and services only (no cash)." & lf & \
+         "3: ATM only and PIN required." & lf & \
+         "4: Cash only." & lf & \
+         "5: Goods and services only (no cash) and PIN required." & lf & \
+         "6: No restrictions and require PIN when feasible." & lf & \
+         "7: Goods and services only (no cash) and require PIN when feasible." & lf & \
+         "8: Reserved for future use by ISO." & lf & \
+         "9: Reserved for future use by ISO." & lf & \
+         "" into tServiceMeanings
+   
+   -- Assign Meanings
+   put line tInterchangeRules + 1 of tInterChangeMeanings into tIMessage
+   put line tAuthorisationProcessing + 1 of tAuthMeanings into tAMessage
+   put line tRangeOfServices + 1 of tServiceMeanings into tROSMessage
+   
+   -- ANSWER DATA
+   answer "CC# /PAN#: " &  tPAN & lf & "Expiry: " & tExpiration & lf & \
+         "ServiceCode: " & tServiceCode & lf & "Discretionary Data: " & tDiscretionaryData & lf & \
+         "Year: " & tYear & lf & "Month: " & tMonth & lf & "English Month: " & tEnglishMonth & \
+         lf & "InterChange Rule: " & tIMessage & lf & "Authorization Rule: " & tAMessage \
+         & lf & "Range Of Services: " & tROSMessage & lf & "Country Code: " & tCountrycode & lf & \
+         "English Country: " & tCountry
+   
+   return "Hey"
+   
+end parseTrack1
+
+
+private function dataTillNextChar pChar pString pCurrentPos
+   put nextPositionOfChar(pChar,pString,pCurrentPos) into tLastChar
+   return (char (pCurrentPos+1) to (tLastChar-1) of pString)
+end dataTillNextChar
+
+private function nextPositionOfChar pChar pString pCurrentPos
+   put the number of chars in pString into tStringLen
+   if pCurrentPos > tStringLen then return "ERROR"
+   if (the number of chars in pChar) > 1 then return "ERROR"
+   repeat with x = (pCurrentPos+1) to tStringLen
+      if char x of pString is pChar then return x
+   end repeat
+end nextPositionOfChar
+
+
+private function theFormatCodeMeaning pCode
+   put char 1 of pCode into pCode
+   put "A,B,C,D,E,F,G,H,I,J,K,L,m,n,o,p,q,r,s,t,u,v,w,x,y,z" into tValid
+   set the itemDel to comma
+   if not(pCode is among the items of tValid) then return "Invalid FormatCode"
+   
+   if pCode is "A" then return "Reserved for proprietary use of card issuer."
+   if pCode is "B" then return "Bank/Financial Sector."
+   if pCode is among the items of "C,D,E,F,G,H,I,J,K,L,m" then return "Reserved for use by ANSI Subcommittee X3B10" 
+   if pCode is among the items of "n,o,p,q,r,s,t,u,v,w,x,y,z" then return "For use by individual card issuers."
+end theFormatCodeMeaning
+
+
+private function theMIIMeaning pMII
+   if pMII is not a number then return "invalid MII"
+   
+   /*
+   0: Reserved for future use by ISO/TC 68.
+   00: Institutions other than card issuers.
+   1: Airlines.
+   2: Airlines and other future assignments.
+   3: Travel and entertainment.
+   4: Banking/financial.
+   5: Banking/financial.
+   59: Financial institutions not registered by ISO.
+   6: Merchandising and banking.
+   7: Petroleum.
+   8: Telecommunications and other future assignments.
+   89: Telecommunications administrations and private operating agencies.
+   9: Reserved for national use.
+   */
+
+end theMIIMeaning
+
+function countryNameFromCode pCode
+   put "NONE" into tCountry
+   set the itemdel to comma
+   put the uCountryCodeData of this stack into tCountries
+   filter tCountries with ("*" & tCountryCode)
+   if the number of lines in tCountries is 1 then put item 1 of tCountries into tCountry
+   return tCountry
+end countryNameFromCode
+
+
+private function serviceCodeMeanings pCode
+   put pCode into tServiceCode
+      
+   --HANDLE SERVICE CODE BETTER
+   if not tServiceCode is "NONE" then
+      put char 1 of tServiceCode into tInterchangeRules
+      put char 2 of tServiceCode into tAuthorisationProcessing
+      put char 3 of tServiceCode into tRangeOfServices
+   end if
+   
+    // MEANINGS
+   put "0: Reserved for future use by ISO." & lf & \
+         "1: Available for international interchange." & lf & \
+         "2: Available for international interchange and with integrated circuit, which should be used for the financial transaction when feasible." & lf & \
+         "3: Reserved for future use by ISO." & lf & \
+         "4: Reserved for future use by ISO." & lf & \
+         "5: Available for national interchange only, except under bilateral agreement." & lf & \
+         "6: Available for national interchange only, except under bilateral agreement, and with integrated circuit, which should be used for the financial transaction when feasible." & lf & \
+         "7: Not available for general interchange, except under bilateral agreement." & lf & \
+         "8: Reserved for future use by ISO." & lf & \
+         "9: Test." & lf & \
+         "" into tInterChangeMeanings
+   
+   put "0: Transactions are authorized following the normal rules." & lf & \
+         "1: Reserved for future use by ISO." & lf & \
+         "2: Transactions are authorized by issuer and should be online." & lf & \
+         "3: Reserved for future use by ISO." & lf & \
+         "4: Transactions are authorized by issuer and should be online, except under bilateral agreement." & lf & \
+         "5: Reserved for future use by ISO." & lf & \
+         "6: Reserved for future use by ISO." & lf & \
+         "7: Reserved for future use by ISO." & lf & \
+         "8: Reserved for future use by ISO." & lf & \
+         "9: Reserved for future use by ISO." & lf & \
+         "" into tAuthMeanings
+   
+   put "0: No restrictions and PIN required." & lf & \
+         "1: No restrictions." & lf & \
+         "2: Goods and services only (no cash)." & lf & \
+         "3: ATM only and PIN required." & lf & \
+         "4: Cash only." & lf & \
+         "5: Goods and services only (no cash) and PIN required." & lf & \
+         "6: No restrictions and require PIN when feasible." & lf & \
+         "7: Goods and services only (no cash) and require PIN when feasible." & lf & \
+         "8: Reserved for future use by ISO." & lf & \
+         "9: Reserved for future use by ISO." & lf & \
+         "" into tServiceMeanings
+   
+   -- Assign Meanings
+   put line tInterchangeRules + 1 of tInterChangeMeanings into tServiceCodeMeaningsA["Interchange"]
+   put line tAuthorisationProcessing + 1 of tAuthMeanings into tServiceCodeMeaningsA["Authorization"]
+   put line tRangeOfServices + 1 of tServiceMeanings into tServiceCodeMeaningsA["RangeOfServices"]
+   
+   return tServiceCodeMeaningsA
+end serviceCodeMeanings
